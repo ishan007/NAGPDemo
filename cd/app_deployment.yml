@@ -21,8 +21,7 @@ spec:
     spec:
       containers:
       - name: fastapp
-        image: localhost/fastapp:latest
-        imagePullPolicy: Never
+        image: ishangaurav/fastapp:latest
         ports:
         - containerPort: 8000
         env:
