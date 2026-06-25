@@ -1,37 +1,1 @@
 
-Service API Tier
-- Exposes an API/Application endpoint.
-- On API/Application invocation, fetches data from the database tier.
-- Can use any standard language/framework of your choice (Node.js, Java, Python, .NET, etc.).
-- Should use best practices for connecting to the database (e.g., connection pooling, config
-separation).
-- Support rolling updates
-- Be externally accessible
-- Demonstrate self-healing
-- Demonstrate HPA on Service API
-Database Tier
-- Must include one table with 5–10 records.
-- Should support data persistence.
-- Be accessible only within the cluster
-- Automatically recover after pod deletion  Kubernetes Requirements 
-Exposed outside the
-cluster
-	Yes	No
-Number of pods 	4	1
-Rolling updates support	Yes	No
-Persistent storage	No	Yes
-Configurable via ConfigMap	Yes	Optional
-Secrets Usage	Yes	Yes
-
-Other Requirements
-• The database configuration to be provided in Service API tier should be configurable from
-outside the pod definition file and application code (use Kubernetes ConfigMap).• The database connection password should not be clearly visible in any Kubernetes YAML
-files (use Kubernetes Secrets).
-• Database data should not be lost if the pod for database is re-deployed.
-• Pod IPs should not be used for communication between tiers.
-• Expose the Service API Tier externally using Ingress
-
-FinOps Requirements
-• Define CPU and memory requests and limits for the Service/API tier.
-• Identify at least three opportunities to optimize Kubernetes costs
-• implement resource optimization using observed metrics
