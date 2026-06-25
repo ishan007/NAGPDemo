@@ -8,39 +8,41 @@ Requirement Understanding
 - API should be accessible using loadbalancer and not Node IP
 
 Service API Tier
-- The service exposes an HTTP endpoint using FastAPI.
-- Every request fetches data from the PostgreSQL database.
 - The app is built using Python + FastAPI, a widely adopted and stable framework.
-- Database configuration is loaded from environment variables, with secrets used for the connection string.
-- The application supports rolling updates through a Deployment configured with a RollingUpdate strategy.
-- The service is reachable from outside the cluster via Ingress.
+- A `/health` endpoint checks database connectivity and supports Kubernetes probes.
+- The root endpoint reads from `public."TestTable"` based on the requested `id`.
+- Secrets is used for the database connection string.
+- The app supports rolling updates strategy through a Deployment.
+- The API is accessible from outside the cluster via EKS Ingress.
 - Health checks are in place, so Kubernetes can detect and recover unhealthy pods.
 - The service supports autoscaling through HPA.
+
+
 
 Database Tier
 - PostgreSQL runs in a StatefulSet with a single replica.
 - Data is persisted using a PVC-backed volume.
-- The database is only accessible inside the cluster through a headless service.
-- StatefulSet ensures the database pod is recreated automatically if deleted.
-- The design expects a table called "TestTable" with 5–10 records.
+- The database is only accessible inside the cluster through a headless service. Headless service provides stable internal DNS.
+- The database pod uses a ConfigMap for non-secret settings like username, database name, and PGDATA.
+- Sensitive data like the password is injected through a Secret.
+- A liveness probe using `pg_isready` helps Kubernetes restart the database if it becomes unhealthy.
+- "TestTable" has 8 records.
 
 Kubernetes Requirements
-- The Service API is exposed externally via Ingress.
-- The database is not exposed outside the cluster.
-- The application tier is designed to scale up to 4 replicas while the database remains at one replica.
-- Rolling updates are supported on the service deployment.
-- Persistent storage is provided only for the database.
+- All resources run in the `nagp` namespace for isolation.
+- The app deployment uses RollingUpdate and includes readiness/liveness probes.
+- HPA scales the app based on CPU and memory usage, with a range of 1 to 4 replicas.
+- The backend API is exposed externally via EKS Ingress and Loadbalancer.
+- The database is not exposed outside the cluster and is persistent.
 - ConfigMaps and Secrets separate configuration from pod definition.
-- Secrets are used for sensitive values, including database credentials.
-- The app connects using service DNS names, not pod IPs.
-- Ingress is used to route outside traffic to the service layer.
+- Secrets are used for sensitive values, including database credentials and connection string.
+- Pods connect using service DNS names, not pod IPs.
 
 Other Requirements
 - Database configuration is supplied through a ConfigMap for the database pod.
-- The database password is stored in a Secret, not in plain YAML.
+- The database password is stored in a Secret(Base64), not in plain YAML.
 - The persistent volume claim keeps data safe even if the database pod is restarted.
 - Service discovery uses ClusterIP/headless services to avoid direct pod IP usage.
-- Separate manifests support EKS and minikube ingress environments.
 
 FinOps Requirements
 - CPU and memory requests and limits are defined for both the application and database pods.
@@ -53,34 +55,9 @@ Assumptions
 - Database initialization and seeding are handled outside the manifest files or through an additional init process.
 - All app and database resources run in the `nagp` namespace.
 - The `DATABASE_URL` is injected by Kubernetes Secrets into the app pod.
-- The ingress controller is already installed for the target environment (ALB for EKS, nginx for minikube).
-- The service API uses query parameters for lookups, matching the current FastAPI implementation.
+- The ingress controller is already installed for the target environment (ALB for EKS).
+- The backend API uses query parameter ID to fetch data from database.
 
-Solution Overview
-
-Application Tier
-- The application is implemented in Python using FastAPI.
-- It loads `DATABASE_URL` at startup and uses SQLAlchemy to talk to PostgreSQL.
-- A `/health` endpoint checks database connectivity and supports Kubernetes probes.
-- The root endpoint reads from `public."TestTable"` based on the requested `id`.
-- Database credentials are kept out of code and injected through Secrets.
-
-Database Tier
-- PostgreSQL runs in a StatefulSet for consistent identity and stable storage.
-- The database pod uses a ConfigMap for non-secret settings like username, database name, and PGDATA.
-- Sensitive data like the password is injected through a Secret.
-- PVC-backed storage keeps data safe across pod restarts.
-- A headless service provides stable internal DNS for the app to connect to.
-- A liveness probe using `pg_isready` helps Kubernetes restart the database if it becomes unhealthy.
-
-Kubernetes Deployment
-- All resources run in the `nagp` namespace for isolation.
-- The app deployment uses RollingUpdate and includes readiness/liveness probes.
-- The service is exposed internally via ClusterIP and externally through Ingress.
-- HPA scales the app based on CPU and memory usage, with a range of 1 to 4 replicas.
-- The database StatefulSet uses persistent storage and internal-only access.
-- Secrets and ConfigMaps keep configuration separate from pod specs.
-- There are dedicated manifests for EKS ALB and minikube nginx ingress.
 
 Justification for the Resources Used
 
@@ -97,9 +74,7 @@ Service
 - This avoids using pod IPs directly and keeps the architecture resilient.
 
 Ingress
-- `app_eks_ingress.yml` is designed for AWS ALB on EKS.
-- `app_minikube_ingress.yml` is the local equivalent using nginx.
-- Ingress is the required way to expose the application layer to external traffic.
+- `app_eks_ingress.yml` is for AWS ALB on EKS.
 
 HPA
 - The HorizontalPodAutoscaler proves that the app can scale automatically.
@@ -115,12 +90,6 @@ Database StatefulSet
 Cost Optimization Justification
 - Requests and limits prevent resource waste and reduce unexpected cloud spend.
 - HPA allows the app to shrink to a smaller footprint when traffic is low.
-- Separate ingress manifests for cloud and local environments reduce environment-specific complexity.
 - A defined storage size avoids over-provisioning the database.
-- Further optimization can come from smaller container images, right-sized node pools, and spot/preemptible capacity.
+- NodeGroup was t3.small with two node only
 
-Conclusion
-- The current setup covers the service and database tier requirements with appropriate isolation, persistence, secrets, and ingress.
-- It supports rolling updates, self-healing, and autoscaling.
-- The architecture is also mindful of FinOps with defined resources and metric-based scaling.
-- The remaining items to verify are registry configuration for cloud deployment and database seed data production readiness.
